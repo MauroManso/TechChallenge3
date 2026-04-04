@@ -1,0 +1,33 @@
+name: techchallenge3
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - matplotlib
+  - seaborn
+  - plotly
+  - jupyterlab
+  - notebook
+  - ipykernel
+  - pyarrow
+  - fastparquet
+  - openpyxl
+  - xlrd
+  - duckdb
+  - sqlalchemy
+  - requests
+  - tqdm
+  - pyyaml
+  - python-dotenv
+  - rich
+  - jupytext
+  - pytest
+  - black
+  - isort
+  - mypy
