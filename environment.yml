@@ -31,3 +31,6 @@ dependencies:
   - black
   - isort
   - mypy
+  - pip:
+    - boto3
+    - awswrangler
