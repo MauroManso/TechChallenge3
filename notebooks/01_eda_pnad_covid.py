@@ -38,7 +38,7 @@ database = "pnad_covid_db"
 
 # Carregar tabelas Gold via Athena
 df_evolucao = wr.athena.read_sql_query(
-    "SELECT * FROM gold_evolucao_nacional ORDER BY mes_pesquisa",
+    "SELECT * FROM gold_evolucao_nacional ORDER BY mes",
     database=database
 )
 
@@ -78,35 +78,35 @@ fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
 # Sintomáticos ao longo do tempo
 ax1 = axes[0, 0]
-ax1.plot(df_evolucao['mes_pesquisa'], df_evolucao['pct_sintomaticos'], marker='o', linewidth=2)
+ax1.plot(df_evolucao['mes'], df_evolucao['pct_sintomaticos'], marker='o', linewidth=2)
 ax1.set_xlabel('Mês')
 ax1.set_ylabel('% Sintomáticos')
 ax1.set_title('Evolução do % de Entrevistados com Sintomas COVID')
-ax1.set_xticks(df_evolucao['mes_pesquisa'])
+ax1.set_xticks(df_evolucao['mes'])
 
 # Testados ao longo do tempo
 ax2 = axes[0, 1]
-ax2.plot(df_evolucao['mes_pesquisa'], df_evolucao['pct_testados'], marker='s', linewidth=2, color='green')
+ax2.plot(df_evolucao['mes'], df_evolucao['pct_testados'], marker='s', linewidth=2, color='green')
 ax2.set_xlabel('Mês')
 ax2.set_ylabel('% Testados')
 ax2.set_title('Evolução do % de Testados para COVID')
-ax2.set_xticks(df_evolucao['mes_pesquisa'])
+ax2.set_xticks(df_evolucao['mes'])
 
 # Total de positivos
 ax3 = axes[1, 0]
-ax3.bar(df_evolucao['mes_pesquisa'], df_evolucao['total_positivos'], color='red', alpha=0.7)
+ax3.bar(df_evolucao['mes'], df_evolucao['total_positivos'], color='red', alpha=0.7)
 ax3.set_xlabel('Mês')
 ax3.set_ylabel('Total Positivos')
 ax3.set_title('Total de Testes Positivos por Mês')
-ax3.set_xticks(df_evolucao['mes_pesquisa'])
+ax3.set_xticks(df_evolucao['mes'])
 
 # Internados
 ax4 = axes[1, 1]
-ax4.bar(df_evolucao['mes_pesquisa'], df_evolucao['total_internados'], color='purple', alpha=0.7)
+ax4.bar(df_evolucao['mes'], df_evolucao['total_internados'], color='purple', alpha=0.7)
 ax4.set_xlabel('Mês')
 ax4.set_ylabel('Total Internados')
 ax4.set_title('Total de Internações por Mês')
-ax4.set_xticks(df_evolucao['mes_pesquisa'])
+ax4.set_xticks(df_evolucao['mes'])
 
 plt.tight_layout()
 plt.savefig('../reports/01_evolucao_temporal.png', dpi=150, bbox_inches='tight')
@@ -174,8 +174,8 @@ ax1.tick_params(axis='x', rotation=45)
 # Evolução temporal por região
 ax2 = axes[1]
 for regiao in df_trabalho['regiao'].unique():
-    dados_regiao = df_trabalho[df_trabalho['regiao'] == regiao].sort_values('mes_pesquisa')
-    ax2.plot(dados_regiao['mes_pesquisa'], dados_regiao['pct_afastados'], marker='o', label=regiao)
+    dados_regiao = df_trabalho[df_trabalho['regiao'] == regiao].sort_values('mes')
+    ax2.plot(dados_regiao['mes'], dados_regiao['pct_afastados'], marker='o', label=regiao)
 ax2.set_xlabel('Mês')
 ax2.set_ylabel('% Afastados')
 ax2.set_title('Evolução do Afastamento do Trabalho por Região')

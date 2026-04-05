@@ -1,6 +1,7 @@
 """
 Glue Job: Bronze to Silver
 Transforma dados brutos CSV em Parquet com limpeza e tipagem.
+Uses Spark SQL for more reliable column handling.
 """
 import sys
 from awsglue.transforms import *
@@ -24,131 +25,94 @@ job.init(args['JOB_NAME'], args)
 
 # Ler dados Bronze
 bronze_path = f"s3://{bucket}/bronze/"
-df = spark.read.option("header", "true").option("delimiter", ";").csv(bronze_path)
+df = spark.read.option("header", "true").option("delimiter", ",").csv(bronze_path)
 
-# Mapeamento de colunas principais para nomes descritivos
-column_mapping = {
-    "Ano": "ano",
-    "UF": "uf_codigo",
-    "V1012": "semana_mes",
-    "V1013": "mes_pesquisa",
-    "V1022": "situacao_domicilio",  # 1=Urbana, 2=Rural
-    "V1023": "tipo_area",
-    "A002": "idade",
-    "A003": "sexo",  # 1=Homem, 2=Mulher
-    "A004": "cor_raca",  # 1=Branca, 2=Preta, 3=Amarela, 4=Parda, 5=Indígena
-    "A005": "escolaridade",
-    "B0011": "teve_febre",
-    "B0012": "teve_tosse",
-    "B0013": "teve_dor_garganta",
-    "B0014": "teve_dificuldade_respirar",
-    "B0015": "teve_dor_cabeca",
-    "B0016": "teve_dor_peito",
-    "B0017": "teve_nausea",
-    "B0018": "teve_nariz_entupido",
-    "B0019": "teve_fadiga",
-    "B00110": "teve_dor_olhos",
-    "B00111": "teve_perda_cheiro",
-    "B00112": "teve_dor_muscular",
-    "B00113": "teve_diarreia",
-    "B002": "procurou_atendimento",
-    "B006": "ficou_internado",
-    "B007": "plano_saude",  # 1=Sim, 2=Não
-    "B009B": "fez_teste_covid",
-    "B011": "resultado_teste",  # 1=Positivo, 2=Negativo, 3=Inconclusivo
-    "C001": "afastou_trabalho",
-    "C002": "motivo_afastamento",
-    "C007": "tipo_trabalho",
-    "C010": "atividade_principal",
-    "V1027": "peso_pos_estratificacao",
-    "V1028": "peso_primario",
-    "V1029": "projecao_populacao"
-}
+# Log original columns for debugging
+print(f"Original columns count: {len(df.columns)}")
+print(f"First 10 columns: {df.columns[:10]}")
 
-# Aplicar renomeação
-for old_name, new_name in column_mapping.items():
-    if old_name in df.columns:
-        df = df.withColumnRenamed(old_name, new_name)
+# Normalize all column names to lowercase using toDF
+lower_cols = [c.lower().strip() for c in df.columns]
+df = df.toDF(*lower_cols)
 
-# Converter colunas numéricas
-numeric_columns = [
-    "ano", "uf_codigo", "semana_mes", "mes_pesquisa", "idade",
-    "situacao_domicilio", "sexo", "cor_raca", "escolaridade",
-    "teve_febre", "teve_tosse", "teve_dor_garganta", "teve_dificuldade_respirar",
-    "procurou_atendimento", "ficou_internado", "plano_saude",
-    "fez_teste_covid", "resultado_teste", "afastou_trabalho"
-]
+print(f"Normalized columns: {df.columns[:10]}")
 
-for col in numeric_columns:
-    if col in df.columns:
-        df = df.withColumn(col, F.col(col).cast(IntegerType()))
+# Register as temp view for SQL operations
+df.createOrReplaceTempView("bronze_data")
 
-# Converter colunas de peso para double
-weight_columns = ["peso_pos_estratificacao", "peso_primario", "projecao_populacao"]
-for col in weight_columns:
-    if col in df.columns:
-        df = df.withColumn(col, F.col(col).cast(DoubleType()))
+# Use Spark SQL for transformations - more reliable than DataFrame API for column names
+df = spark.sql("""
+SELECT 
+    *,
+    CASE 
+        WHEN uf = 11 THEN 'Rondonia'
+        WHEN uf = 12 THEN 'Acre'
+        WHEN uf = 13 THEN 'Amazonas'
+        WHEN uf = 14 THEN 'Roraima'
+        WHEN uf = 15 THEN 'Para'
+        WHEN uf = 16 THEN 'Amapa'
+        WHEN uf = 17 THEN 'Tocantins'
+        WHEN uf = 21 THEN 'Maranhao'
+        WHEN uf = 22 THEN 'Piaui'
+        WHEN uf = 23 THEN 'Ceara'
+        WHEN uf = 24 THEN 'Rio Grande do Norte'
+        WHEN uf = 25 THEN 'Paraiba'
+        WHEN uf = 26 THEN 'Pernambuco'
+        WHEN uf = 27 THEN 'Alagoas'
+        WHEN uf = 28 THEN 'Sergipe'
+        WHEN uf = 29 THEN 'Bahia'
+        WHEN uf = 31 THEN 'Minas Gerais'
+        WHEN uf = 32 THEN 'Espirito Santo'
+        WHEN uf = 33 THEN 'Rio de Janeiro'
+        WHEN uf = 35 THEN 'Sao Paulo'
+        WHEN uf = 41 THEN 'Parana'
+        WHEN uf = 42 THEN 'Santa Catarina'
+        WHEN uf = 43 THEN 'Rio Grande do Sul'
+        WHEN uf = 50 THEN 'Mato Grosso do Sul'
+        WHEN uf = 51 THEN 'Mato Grosso'
+        WHEN uf = 52 THEN 'Goias'
+        WHEN uf = 53 THEN 'Distrito Federal'
+        ELSE 'Desconhecido'
+    END AS uf_nome,
+    CASE 
+        WHEN uf BETWEEN 11 AND 17 THEN 'Norte'
+        WHEN uf BETWEEN 21 AND 29 THEN 'Nordeste'
+        WHEN uf BETWEEN 31 AND 35 THEN 'Sudeste'
+        WHEN uf BETWEEN 41 AND 43 THEN 'Sul'
+        WHEN uf BETWEEN 50 AND 53 THEN 'Centro-Oeste'
+        ELSE 'Desconhecido'
+    END AS regiao,
+    CASE 
+        WHEN b0011 = 1 OR b0012 = 1 OR b0014 = 1 OR b00111 = 1 THEN 1
+        ELSE 0
+    END AS teve_sintomas_covid,
+    CAST(ano AS INT) AS ano_int,
+    CAST(uf AS INT) AS uf_int,
+    CAST(v1013 AS INT) AS mes_int,
+    CAST(a002 AS INT) AS idade,
+    CAST(a003 AS INT) AS sexo,
+    CAST(a004 AS INT) AS cor_raca,
+    CAST(b0011 AS INT) AS febre,
+    CAST(b0012 AS INT) AS tosse,
+    CAST(b0014 AS INT) AS dif_respirar,
+    CAST(b00111 AS INT) AS perda_cheiro,
+    CAST(b002 AS INT) AS procurou_atendimento,
+    CAST(b006 AS INT) AS internado,
+    CAST(b007 AS INT) AS plano_saude,
+    CAST(b009b AS INT) AS fez_teste,
+    CAST(b011 AS INT) AS resultado_teste,
+    CAST(c001 AS INT) AS afastou_trabalho,
+    CAST(v1032 AS DOUBLE) AS peso
+FROM bronze_data
+""")
 
-# Adicionar colunas derivadas
-df = df.withColumn(
-    "uf_nome",
-    F.when(F.col("uf_codigo") == 11, "Rondônia")
-    .when(F.col("uf_codigo") == 12, "Acre")
-    .when(F.col("uf_codigo") == 13, "Amazonas")
-    .when(F.col("uf_codigo") == 14, "Roraima")
-    .when(F.col("uf_codigo") == 15, "Pará")
-    .when(F.col("uf_codigo") == 16, "Amapá")
-    .when(F.col("uf_codigo") == 17, "Tocantins")
-    .when(F.col("uf_codigo") == 21, "Maranhão")
-    .when(F.col("uf_codigo") == 22, "Piauí")
-    .when(F.col("uf_codigo") == 23, "Ceará")
-    .when(F.col("uf_codigo") == 24, "Rio Grande do Norte")
-    .when(F.col("uf_codigo") == 25, "Paraíba")
-    .when(F.col("uf_codigo") == 26, "Pernambuco")
-    .when(F.col("uf_codigo") == 27, "Alagoas")
-    .when(F.col("uf_codigo") == 28, "Sergipe")
-    .when(F.col("uf_codigo") == 29, "Bahia")
-    .when(F.col("uf_codigo") == 31, "Minas Gerais")
-    .when(F.col("uf_codigo") == 32, "Espírito Santo")
-    .when(F.col("uf_codigo") == 33, "Rio de Janeiro")
-    .when(F.col("uf_codigo") == 35, "São Paulo")
-    .when(F.col("uf_codigo") == 41, "Paraná")
-    .when(F.col("uf_codigo") == 42, "Santa Catarina")
-    .when(F.col("uf_codigo") == 43, "Rio Grande do Sul")
-    .when(F.col("uf_codigo") == 50, "Mato Grosso do Sul")
-    .when(F.col("uf_codigo") == 51, "Mato Grosso")
-    .when(F.col("uf_codigo") == 52, "Goiás")
-    .when(F.col("uf_codigo") == 53, "Distrito Federal")
-    .otherwise("Desconhecido")
-)
-
-df = df.withColumn(
-    "regiao",
-    F.when(F.col("uf_codigo").between(11, 17), "Norte")
-    .when(F.col("uf_codigo").between(21, 29), "Nordeste")
-    .when(F.col("uf_codigo").between(31, 35), "Sudeste")
-    .when(F.col("uf_codigo").between(41, 43), "Sul")
-    .when(F.col("uf_codigo").between(50, 53), "Centro-Oeste")
-    .otherwise("Desconhecido")
-)
-
-# Indicador de sintomas COVID
-df = df.withColumn(
-    "teve_sintomas_covid",
-    F.when(
-        (F.col("teve_febre") == 1) |
-        (F.col("teve_tosse") == 1) |
-        (F.col("teve_dificuldade_respirar") == 1) |
-        (F.col("teve_perda_cheiro") == 1),
-        1
-    ).otherwise(0)
-)
-
-# Remover duplicatas
+# Remove duplicates
 df = df.dropDuplicates()
 
-# Repartir por mês e escrever em Parquet
+# Write to Silver as Parquet partitioned by ano and mes
 silver_path = f"s3://{bucket}/silver/"
-df.write.mode("overwrite").partitionBy("ano", "mes_pesquisa").parquet(silver_path)
+df.write.mode("overwrite").partitionBy("ano", "v1013").parquet(silver_path)
+
+print(f"Silver data written to {silver_path}")
 
 job.commit()

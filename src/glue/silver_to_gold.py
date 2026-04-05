@@ -1,6 +1,7 @@
 """
 Glue Job: Silver to Gold
 Cria agregações analíticas para o Tech Challenge.
+Uses Spark SQL for reliable column handling.
 """
 import sys
 from awsglue.utils import getResolvedOptions
@@ -22,214 +23,176 @@ job.init(args['JOB_NAME'], args)
 silver_path = f"s3://{bucket}/silver/"
 df = spark.read.parquet(silver_path)
 
+print(f"Silver columns: {df.columns}")
+
 gold_path = f"s3://{bucket}/gold/"
+
+# Register temp view for SQL
+df.createOrReplaceTempView("silver_data")
 
 # =====================================================
 # GOLD 1: Sintomas COVID por UF e Mês
 # =====================================================
-sintomas_uf_mes = df.groupBy("uf_codigo", "uf_nome", "regiao", "mes_pesquisa").agg(
-    F.count("*").alias("total_entrevistados"),
-    F.sum("teve_febre").alias("total_com_febre"),
-    F.sum("teve_tosse").alias("total_com_tosse"),
-    F.sum("teve_dificuldade_respirar").alias("total_dificuldade_respirar"),
-    F.sum("teve_perda_cheiro").alias("total_perda_cheiro"),
-    F.sum("teve_sintomas_covid").alias("total_com_sintomas_covid"),
-    F.sum(F.when(F.col("procurou_atendimento") == 1, 1).otherwise(0)).alias("total_procurou_atendimento"),
-    F.sum(F.when(F.col("ficou_internado") == 1, 1).otherwise(0)).alias("total_internados"),
-    F.sum("peso_pos_estratificacao").alias("populacao_estimada")
-)
-
-# Calcular percentuais
-sintomas_uf_mes = sintomas_uf_mes.withColumn(
-    "pct_sintomas_covid",
-    F.round((F.col("total_com_sintomas_covid") / F.col("total_entrevistados")) * 100, 2)
-).withColumn(
-    "pct_procurou_atendimento",
-    F.round((F.col("total_procurou_atendimento") / F.col("total_entrevistados")) * 100, 2)
-).withColumn(
-    "pct_internados",
-    F.round((F.col("total_internados") / F.col("total_entrevistados")) * 100, 2)
-)
+sintomas_uf_mes = spark.sql("""
+SELECT 
+    uf,
+    uf_nome,
+    regiao,
+    v1013 as mes,
+    COUNT(*) as total_entrevistados,
+    SUM(CASE WHEN febre = 1 THEN 1 ELSE 0 END) as total_com_febre,
+    SUM(CASE WHEN tosse = 1 THEN 1 ELSE 0 END) as total_com_tosse,
+    SUM(CASE WHEN dif_respirar = 1 THEN 1 ELSE 0 END) as total_dificuldade_respirar,
+    SUM(CASE WHEN perda_cheiro = 1 THEN 1 ELSE 0 END) as total_perda_cheiro,
+    SUM(teve_sintomas_covid) as total_com_sintomas_covid,
+    SUM(CASE WHEN procurou_atendimento = 1 THEN 1 ELSE 0 END) as total_procurou_atendimento,
+    SUM(CASE WHEN internado = 1 THEN 1 ELSE 0 END) as total_internados,
+    SUM(COALESCE(peso, 0)) as populacao_estimada,
+    ROUND(SUM(teve_sintomas_covid) * 100.0 / COUNT(*), 2) as pct_sintomas_covid,
+    ROUND(SUM(CASE WHEN procurou_atendimento = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_procurou_atendimento,
+    ROUND(SUM(CASE WHEN internado = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_internados
+FROM silver_data
+GROUP BY uf, uf_nome, regiao, v1013
+""")
 
 sintomas_uf_mes.write.mode("overwrite").parquet(f"{gold_path}sintomas_uf_mes/")
+print("Gold 1: sintomas_uf_mes written")
 
 # =====================================================
 # GOLD 2: Impacto no Trabalho por Região e Mês
 # =====================================================
-trabalho_regiao = df.groupBy("regiao", "mes_pesquisa").agg(
-    F.count("*").alias("total_entrevistados"),
-    F.sum(F.when(F.col("afastou_trabalho") == 1, 1).otherwise(0)).alias("total_afastados"),
-    F.sum(F.when(F.col("afastou_trabalho") == 2, 1).otherwise(0)).alias("total_nao_afastados"),
-    F.sum("peso_pos_estratificacao").alias("populacao_estimada")
-)
-
-trabalho_regiao = trabalho_regiao.withColumn(
-    "pct_afastados",
-    F.round((F.col("total_afastados") / F.col("total_entrevistados")) * 100, 2)
-)
+trabalho_regiao = spark.sql("""
+SELECT 
+    regiao,
+    v1013 as mes,
+    COUNT(*) as total_entrevistados,
+    SUM(CASE WHEN afastou_trabalho = 1 THEN 1 ELSE 0 END) as total_afastados,
+    SUM(CASE WHEN afastou_trabalho = 2 THEN 1 ELSE 0 END) as total_nao_afastados,
+    SUM(COALESCE(peso, 0)) as populacao_estimada,
+    ROUND(SUM(CASE WHEN afastou_trabalho = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_afastados
+FROM silver_data
+GROUP BY regiao, v1013
+""")
 
 trabalho_regiao.write.mode("overwrite").parquet(f"{gold_path}trabalho_regiao_mes/")
+print("Gold 2: trabalho_regiao_mes written")
 
 # =====================================================
 # GOLD 3: Perfil Demográfico dos Sintomáticos
 # =====================================================
-perfil_sintomaticos = df.filter(F.col("teve_sintomas_covid") == 1).groupBy(
-    "sexo", "cor_raca", "escolaridade"
-).agg(
-    F.count("*").alias("total_sintomaticos"),
-    F.avg("idade").alias("idade_media"),
-    F.sum(F.when(F.col("plano_saude") == 1, 1).otherwise(0)).alias("com_plano_saude"),
-    F.sum(F.when(F.col("procurou_atendimento") == 1, 1).otherwise(0)).alias("procurou_atendimento"),
-    F.sum("peso_pos_estratificacao").alias("populacao_estimada")
-)
-
-# Adicionar descrições
-perfil_sintomaticos = perfil_sintomaticos.withColumn(
-    "sexo_desc",
-    F.when(F.col("sexo") == 1, "Masculino")
-    .when(F.col("sexo") == 2, "Feminino")
-    .otherwise("Não informado")
-).withColumn(
-    "cor_raca_desc",
-    F.when(F.col("cor_raca") == 1, "Branca")
-    .when(F.col("cor_raca") == 2, "Preta")
-    .when(F.col("cor_raca") == 3, "Amarela")
-    .when(F.col("cor_raca") == 4, "Parda")
-    .when(F.col("cor_raca") == 5, "Indígena")
-    .otherwise("Não informado")
-)
+perfil_sintomaticos = spark.sql("""
+SELECT 
+    sexo,
+    cor_raca,
+    COUNT(*) as total_sintomaticos,
+    AVG(idade) as idade_media,
+    SUM(CASE WHEN plano_saude = 1 THEN 1 ELSE 0 END) as com_plano_saude,
+    SUM(CASE WHEN procurou_atendimento = 1 THEN 1 ELSE 0 END) as procurou_atendimento,
+    SUM(COALESCE(peso, 0)) as populacao_estimada,
+    CASE 
+        WHEN sexo = 1 THEN 'Masculino'
+        WHEN sexo = 2 THEN 'Feminino'
+        ELSE 'Nao informado'
+    END as sexo_desc,
+    CASE 
+        WHEN cor_raca = 1 THEN 'Branca'
+        WHEN cor_raca = 2 THEN 'Preta'
+        WHEN cor_raca = 3 THEN 'Amarela'
+        WHEN cor_raca = 4 THEN 'Parda'
+        WHEN cor_raca = 5 THEN 'Indigena'
+        ELSE 'Nao informado'
+    END as cor_raca_desc
+FROM silver_data
+WHERE teve_sintomas_covid = 1
+GROUP BY sexo, cor_raca
+""")
 
 perfil_sintomaticos.write.mode("overwrite").parquet(f"{gold_path}perfil_sintomaticos/")
+print("Gold 3: perfil_sintomaticos written")
 
 # =====================================================
 # GOLD 4: Testes COVID por UF
 # =====================================================
-testes_uf = df.filter(F.col("fez_teste_covid").isNotNull()).groupBy("uf_codigo", "uf_nome", "regiao").agg(
-    F.count("*").alias("total_entrevistados"),
-    F.sum(F.when(F.col("fez_teste_covid") == 1, 1).otherwise(0)).alias("total_testados"),
-    F.sum(F.when(F.col("resultado_teste") == 1, 1).otherwise(0)).alias("total_positivos"),
-    F.sum(F.when(F.col("resultado_teste") == 2, 1).otherwise(0)).alias("total_negativos"),
-    F.sum("peso_pos_estratificacao").alias("populacao_estimada")
-)
-
-testes_uf = testes_uf.withColumn(
-    "pct_testados",
-    F.round((F.col("total_testados") / F.col("total_entrevistados")) * 100, 2)
-).withColumn(
-    "taxa_positividade",
-    F.when(
-        F.col("total_testados") > 0,
-        F.round((F.col("total_positivos") / F.col("total_testados")) * 100, 2)
-    ).otherwise(0)
-)
+testes_uf = spark.sql("""
+SELECT 
+    uf,
+    uf_nome,
+    regiao,
+    COUNT(*) as total_entrevistados,
+    SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END) as total_testados,
+    SUM(CASE WHEN resultado_teste = 1 THEN 1 ELSE 0 END) as total_positivos,
+    SUM(CASE WHEN resultado_teste = 2 THEN 1 ELSE 0 END) as total_negativos,
+    SUM(COALESCE(peso, 0)) as populacao_estimada,
+    ROUND(SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_testados,
+    CASE 
+        WHEN SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END) > 0 
+        THEN ROUND(SUM(CASE WHEN resultado_teste = 1 THEN 1 ELSE 0 END) * 100.0 / SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END), 2)
+        ELSE 0 
+    END as taxa_positividade
+FROM silver_data
+WHERE fez_teste IS NOT NULL
+GROUP BY uf, uf_nome, regiao
+""")
 
 testes_uf.write.mode("overwrite").parquet(f"{gold_path}testes_uf/")
+print("Gold 4: testes_uf written")
 
 # =====================================================
 # GOLD 5: Evolução Temporal Nacional
 # =====================================================
-evolucao_nacional = df.groupBy("mes_pesquisa").agg(
-    F.count("*").alias("total_entrevistados"),
-    F.sum("teve_sintomas_covid").alias("total_com_sintomas"),
-    F.sum(F.when(F.col("fez_teste_covid") == 1, 1).otherwise(0)).alias("total_testados"),
-    F.sum(F.when(F.col("resultado_teste") == 1, 1).otherwise(0)).alias("total_positivos"),
-    F.sum(F.when(F.col("ficou_internado") == 1, 1).otherwise(0)).alias("total_internados"),
-    F.sum(F.when(F.col("afastou_trabalho") == 1, 1).otherwise(0)).alias("total_afastados_trabalho"),
-    F.sum("peso_pos_estratificacao").alias("populacao_estimada")
-).orderBy("mes_pesquisa")
-
-evolucao_nacional = evolucao_nacional.withColumn(
-    "pct_sintomaticos",
-    F.round((F.col("total_com_sintomas") / F.col("total_entrevistados")) * 100, 2)
-).withColumn(
-    "pct_testados",
-    F.round((F.col("total_testados") / F.col("total_entrevistados")) * 100, 2)
-)
+evolucao_nacional = spark.sql("""
+SELECT 
+    v1013 as mes,
+    COUNT(*) as total_entrevistados,
+    SUM(teve_sintomas_covid) as total_com_sintomas,
+    SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END) as total_testados,
+    SUM(CASE WHEN resultado_teste = 1 THEN 1 ELSE 0 END) as total_positivos,
+    SUM(CASE WHEN internado = 1 THEN 1 ELSE 0 END) as total_internados,
+    SUM(CASE WHEN afastou_trabalho = 1 THEN 1 ELSE 0 END) as total_afastados_trabalho,
+    SUM(COALESCE(peso, 0)) as populacao_estimada,
+    ROUND(SUM(teve_sintomas_covid) * 100.0 / COUNT(*), 2) as pct_sintomaticos,
+    ROUND(SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_testados
+FROM silver_data
+GROUP BY v1013
+ORDER BY v1013
+""")
 
 evolucao_nacional.write.mode("overwrite").parquet(f"{gold_path}evolucao_nacional/")
+print("Gold 5: evolucao_nacional written")
 
 # =====================================================
-# GOLD 6: Indicadores Econômicos por Região
+# GOLD 6: Acesso a Saúde por Perfil Socioeconômico
 # =====================================================
-# Análise de impacto econômico mais abrangente
-economico_regiao = df.groupBy("regiao", "mes_pesquisa").agg(
-    F.count("*").alias("total_entrevistados"),
-    # Trabalho
-    F.sum(F.when(F.col("afastou_trabalho") == 1, 1).otherwise(0)).alias("total_afastados"),
-    F.sum(F.when(F.col("C011A") == 1, 1).otherwise(0)).alias("trabalho_remoto"),
-    # Tipo de ocupação
-    F.sum(F.when(F.col("tipo_trabalho") == 1, 1).otherwise(0)).alias("empregados_formais"),
-    F.sum(F.when(F.col("tipo_trabalho") == 2, 1).otherwise(0)).alias("empregados_informais"),
-    F.sum(F.when(F.col("tipo_trabalho") == 3, 1).otherwise(0)).alias("conta_propria"),
-    # Auxílio emergencial
-    F.sum(F.when(F.col("F001") == 1, 1).otherwise(0)).alias("recebeu_auxilio"),
-    # Renda (média dos que informaram)
-    F.avg(F.when(F.col("C013").isNotNull() & (F.col("C013") > 0), F.col("C013"))).alias("renda_media_habitual"),
-    F.avg(F.when(F.col("C014").isNotNull() & (F.col("C014") > 0), F.col("C014"))).alias("renda_media_efetiva"),
-    # Pesos
-    F.sum("peso_pos_estratificacao").alias("populacao_estimada")
-)
-
-# Calcular percentuais e indicadores derivados
-economico_regiao = economico_regiao.withColumn(
-    "pct_afastados",
-    F.round((F.col("total_afastados") / F.col("total_entrevistados")) * 100, 2)
-).withColumn(
-    "pct_trabalho_remoto",
-    F.round((F.col("trabalho_remoto") / F.col("total_entrevistados")) * 100, 2)
-).withColumn(
-    "pct_informal",
-    F.round((F.col("empregados_informais") / 
-            (F.col("empregados_formais") + F.col("empregados_informais") + F.col("conta_propria") + 1)) * 100, 2)
-).withColumn(
-    "pct_auxilio",
-    F.round((F.col("recebeu_auxilio") / F.col("total_entrevistados")) * 100, 2)
-).withColumn(
-    "variacao_renda_pct",
-    F.when(
-        F.col("renda_media_habitual") > 0,
-        F.round(((F.col("renda_media_efetiva") - F.col("renda_media_habitual")) / F.col("renda_media_habitual")) * 100, 2)
-    ).otherwise(0)
-)
-
-economico_regiao.write.mode("overwrite").parquet(f"{gold_path}economico_regiao/")
-
-# =====================================================
-# GOLD 7: Acesso a Saúde por Perfil Socioeconômico
-# =====================================================
-# Cruzamento de indicadores de saúde com perfil econômico
-acesso_saude = df.filter(F.col("teve_sintomas_covid") == 1).groupBy(
-    "plano_saude", "situacao_domicilio"
-).agg(
-    F.count("*").alias("total_sintomaticos"),
-    F.sum(F.when(F.col("procurou_atendimento") == 1, 1).otherwise(0)).alias("procurou_atendimento"),
-    F.sum(F.when(F.col("ficou_internado") == 1, 1).otherwise(0)).alias("internados"),
-    F.sum(F.when(F.col("fez_teste_covid") == 1, 1).otherwise(0)).alias("fez_teste"),
-    F.avg("idade").alias("idade_media"),
-    F.sum("peso_pos_estratificacao").alias("populacao_estimada")
-)
-
-acesso_saude = acesso_saude.withColumn(
-    "plano_saude_desc",
-    F.when(F.col("plano_saude") == 1, "Com plano de saúde")
-    .when(F.col("plano_saude") == 2, "Sem plano de saúde")
-    .otherwise("Não informado")
-).withColumn(
-    "situacao_desc",
-    F.when(F.col("situacao_domicilio") == 1, "Urbano")
-    .when(F.col("situacao_domicilio") == 2, "Rural")
-    .otherwise("Não informado")
-).withColumn(
-    "pct_procurou_atendimento",
-    F.round((F.col("procurou_atendimento") / F.col("total_sintomaticos")) * 100, 2)
-).withColumn(
-    "pct_internados",
-    F.round((F.col("internados") / F.col("total_sintomaticos")) * 100, 2)
-).withColumn(
-    "pct_testados",
-    F.round((F.col("fez_teste") / F.col("total_sintomaticos")) * 100, 2)
-)
+acesso_saude = spark.sql("""
+SELECT 
+    plano_saude,
+    v1022 as situacao_domicilio,
+    COUNT(*) as total_sintomaticos,
+    SUM(CASE WHEN procurou_atendimento = 1 THEN 1 ELSE 0 END) as procurou_atendimento,
+    SUM(CASE WHEN internado = 1 THEN 1 ELSE 0 END) as internados,
+    SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END) as fez_teste,
+    AVG(idade) as idade_media,
+    SUM(COALESCE(peso, 0)) as populacao_estimada,
+    CASE 
+        WHEN plano_saude = 1 THEN 'Com plano de saude'
+        WHEN plano_saude = 2 THEN 'Sem plano de saude'
+        ELSE 'Nao informado'
+    END as plano_saude_desc,
+    CASE 
+        WHEN v1022 = 1 THEN 'Urbano'
+        WHEN v1022 = 2 THEN 'Rural'
+        ELSE 'Nao informado'
+    END as situacao_desc,
+    ROUND(SUM(CASE WHEN procurou_atendimento = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_procurou_atendimento,
+    ROUND(SUM(CASE WHEN internado = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_internados,
+    ROUND(SUM(CASE WHEN fez_teste = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as pct_testados
+FROM silver_data
+WHERE teve_sintomas_covid = 1
+GROUP BY plano_saude, v1022
+""")
 
 acesso_saude.write.mode("overwrite").parquet(f"{gold_path}acesso_saude/")
+print("Gold 6: acesso_saude written")
 
+print("All Gold tables written successfully!")
 job.commit()
