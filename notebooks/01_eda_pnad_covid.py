@@ -12,7 +12,9 @@
 # 
 # Análise Exploratória de Dados do Tech Challenge 3
 # 
-# **Fonte:** IBGE - PNAD COVID-19 (Maio a Novembro/2020)
+# **Fonte:** IBGE - PNAD COVID-19 (Setembro a Novembro/2020)
+# 
+# **Requisito:** Análise de 3 meses conforme enunciado oficial
 
 # %%
 import pandas as pd
@@ -245,7 +247,7 @@ plt.show()
 
 # %%
 print("=" * 60)
-print("RESUMO ESTATÍSTICO - PNAD COVID-19 (Mai-Nov/2020)")
+print("RESUMO ESTATÍSTICO - PNAD COVID-19 (Set-Nov/2020)")
 print("=" * 60)
 
 # Totais

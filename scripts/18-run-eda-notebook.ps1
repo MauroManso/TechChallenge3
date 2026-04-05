@@ -1,6 +1,6 @@
 <#
     18-run-eda-notebook.ps1 - Convert and run EDA notebook
-    Idempotent: Safe to run multiple times
+    Regenera sempre para garantir consistência dos outputs
 #>
 
 # Load configuration
@@ -10,6 +10,25 @@ Write-Step "Step 18: Run EDA Notebook"
 
 $notebooksDir = Join-Path $PROJECT_ROOT "notebooks"
 $reportsDir = Join-Path $PROJECT_ROOT "reports"
+
+# Derivar caminhos de ferramentas do ambiente Conda
+$envDir = Split-Path $CONDA_PYTHON -Parent
+$jupytextPath = Join-Path $envDir "Scripts\jupytext.exe"
+$jupyterPath = Join-Path $envDir "Scripts\jupyter.exe"
+
+# Verificar se ferramentas existem
+if (-not (Test-Path $jupytextPath)) { 
+    Write-Info "jupytext not found at $jupytextPath, trying system PATH"
+    $jupytextPath = "jupytext" 
+}
+if (-not (Test-Path $jupyterPath)) { 
+    Write-Info "jupyter not found at $jupyterPath, trying system PATH"
+    $jupyterPath = "jupyter" 
+}
+
+Write-Info "Using Python: $CONDA_PYTHON"
+Write-Info "Using jupytext: $jupytextPath"
+Write-Info "Using jupyter: $jupyterPath"
 
 # Check if notebook/script exists
 $edaScript = Join-Path $notebooksDir "01_eda_pnad_covid.py"
@@ -21,28 +40,27 @@ if (-not (Test-Path $edaScript) -and -not (Test-Path $edaNotebook)) {
     exit 1
 }
 
-# Check if reports already exist
-$existingReports = Get-ChildItem -Path $reportsDir -Filter "*.png" -ErrorAction SilentlyContinue
-if ($existingReports -and $existingReports.Count -gt 0) {
-    Write-Skipped "EDA reports already exist ($($existingReports.Count) PNG files)"
-    $existingReports | Select-Object Name, LastWriteTime | Format-Table
-} else {
-    # Convert .py to .ipynb if needed
-    if (Test-Path $edaScript) {
-        Write-Info "Converting .py to .ipynb..."
-        jupytext --to notebook $edaScript 2>&1 | Show-LimitedOutput
-    }
+# Sempre regenerar para garantir consistência (governança)
+Write-Info "Regenerando EDA para garantir consistência com dados atuais..."
+
+# Convert .py to .ipynb if needed
+if (Test-Path $edaScript) {
+    Write-Info "Converting .py to .ipynb..."
+    & $jupytextPath --to notebook $edaScript 2>&1 | Show-LimitedOutput
+}
+
+# Execute notebook using Python module approach (more reliable on Windows)
+if (Test-Path $edaNotebook) {
+    Write-Info "Executing EDA notebook..."
     
-    # Execute notebook
-    if (Test-Path $edaNotebook) {
-        Write-Info "Executing EDA notebook..."
-        jupyter nbconvert --to notebook --execute $edaNotebook --inplace 2>&1 | Show-LimitedOutput
-        
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Notebook executed successfully"
-        } else {
-            Write-Error "Notebook execution failed"
-        }
+    # Use python -m instead of jupyter directly for better Windows compatibility
+    & $CONDA_PYTHON -m jupyter nbconvert --to notebook --execute $edaNotebook --inplace 2>&1 | Show-LimitedOutput
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "Notebook executed successfully"
+    } else {
+        Write-Error "Notebook execution failed"
+        Write-Info "Try running manually: $CONDA_PYTHON -m jupyter nbconvert --execute $edaNotebook"
     }
 }
 

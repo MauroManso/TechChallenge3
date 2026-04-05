@@ -5,7 +5,7 @@
 
 param(
     [int]$SkipTo = 1,
-    [int]$StopAt = 18,
+    [int]$StopAt = 19,
     [switch]$DryRun
 )
 
@@ -30,7 +30,8 @@ $steps = @(
     @{ Number = 15; Script = "15-create-gold-crawler.ps1";      Description = "Create gold crawler" },
     @{ Number = 16; Script = "16-create-athena-workgroup.ps1";  Description = "Create Athena workgroup" },
     @{ Number = 17; Script = "17-run-athena-queries.ps1";       Description = "Run Athena queries" },
-    @{ Number = 18; Script = "18-run-eda-notebook.ps1";         Description = "Run EDA notebook" }
+    @{ Number = 18; Script = "18-run-eda-notebook.ps1";         Description = "Run EDA notebook" },
+    @{ Number = 19; Script = "19-run-quality-checks.ps1";       Description = "Run quality checks" }
 )
 
 # Banner

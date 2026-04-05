@@ -9,7 +9,8 @@
 Write-Step "Step 8: Add Partitions to Bronze Table"
 
 $tableName = "pnad_bronze"
-$months = @("05", "06", "07", "08", "09", "10", "11")
+# Requisito Tech Challenge: usar apenas 3 meses (Setembro, Outubro, Novembro/2020)
+$months = @("09", "10", "11")
 $year = "2020"
 
 # Get existing partitions

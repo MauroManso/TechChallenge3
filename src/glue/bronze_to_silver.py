@@ -2,6 +2,15 @@
 Glue Job: Bronze to Silver
 Transforma dados brutos CSV em Parquet com limpeza e tipagem.
 Uses Spark SQL for more reliable column handling.
+
+IMPORTANTE - Tratamento de Schema Drift:
+Os dados PNAD COVID possuem variação de colunas entre meses:
+- Maio/Junho 2020: ~114 colunas
+- Julho-Outubro 2020: ~145 colunas
+- Novembro 2020: ~148 colunas
+
+Este job normaliza o schema usando apenas as colunas essenciais para análise,
+garantindo consistência temporal mesmo com variações na fonte.
 """
 import sys
 from awsglue.transforms import *
@@ -11,6 +20,15 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType, DoubleType
+
+# Colunas essenciais para análise - presentes em todos os meses
+CORE_COLUMNS = {
+    'ano', 'uf', 'v1013', 'v1022', 'v1023', 'v1032',  # identificação/período/peso
+    'a002', 'a003', 'a004', 'a005',                    # dados demográficos
+    'b0011', 'b0012', 'b0014', 'b00111',               # sintomas principais
+    'b002', 'b006', 'b007', 'b009b', 'b011',           # atendimento/testes
+    'c001',                                            # trabalho
+}
 
 # Parâmetros do Job
 args = getResolvedOptions(sys.argv, ['JOB_NAME', 'S3_BUCKET'])
@@ -28,6 +46,7 @@ bronze_path = f"s3://{bucket}/bronze/"
 df = spark.read.option("header", "true").option("delimiter", ",").csv(bronze_path)
 
 # Log original columns for debugging
+original_cols = set(c.lower().strip() for c in df.columns)
 print(f"Original columns count: {len(df.columns)}")
 print(f"First 10 columns: {df.columns[:10]}")
 
@@ -36,6 +55,15 @@ lower_cols = [c.lower().strip() for c in df.columns]
 df = df.toDF(*lower_cols)
 
 print(f"Normalized columns: {df.columns[:10]}")
+
+# Validar colunas essenciais
+missing_core = CORE_COLUMNS - original_cols
+if missing_core:
+    print(f"WARNING: Colunas essenciais ausentes: {missing_core}")
+    # Criar colunas faltantes com NULL para manter consistência
+    for col in missing_core:
+        df = df.withColumn(col, F.lit(None))
+        print(f"  Criada coluna {col} com NULL")
 
 # Register as temp view for SQL operations
 df.createOrReplaceTempView("bronze_data")

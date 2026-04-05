@@ -136,9 +136,35 @@ function Test-AthenaWorkgroupExists {
     return $LASTEXITCODE -eq 0
 }
 
+function Get-CondaPythonPath {
+    param([string]$EnvName = "techchallenge3")
+    
+    # Tentar caminhos comuns para ambientes Conda
+    $possiblePaths = @(
+        "$env:USERPROFILE\.conda\envs\$EnvName\python.exe",
+        "$env:USERPROFILE\miniconda3\envs\$EnvName\python.exe",
+        "$env:USERPROFILE\anaconda3\envs\$EnvName\python.exe",
+        "C:\ProgramData\miniconda3\envs\$EnvName\python.exe",
+        "C:\ProgramData\anaconda3\envs\$EnvName\python.exe"
+    )
+    
+    $pythonPath = $possiblePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    
+    if ($pythonPath) {
+        return $pythonPath
+    }
+    
+    # Fallback para python do sistema
+    return "python"
+}
+
+# Variável global para Python do ambiente
+$script:CONDA_PYTHON = Get-CondaPythonPath
+
 # Export variables
 Write-Host "Configuration loaded:" -ForegroundColor Green
 Write-Host "  BUCKET_NAME: $script:BUCKET_NAME"
 Write-Host "  AWS_REGION: $script:AWS_REGION"
 Write-Host "  GLUE_DATABASE: $script:GLUE_DATABASE"
 Write-Host "  PROJECT_ROOT: $script:PROJECT_ROOT"
+Write-Host "  CONDA_PYTHON: $script:CONDA_PYTHON"

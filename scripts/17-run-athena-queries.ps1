@@ -16,45 +16,26 @@ if (-not (Test-Path $queryScript)) {
     exit 1
 }
 
-# Sample queries
+# Sample queries (single line to avoid parsing issues)
 $queries = @(
     @{
         Name = "Evolução temporal dos sintomas"
-        Query = @"
-SELECT 
-    mes,
-    total_entrevistados,
-    total_com_sintomas,
-    pct_sintomaticos,
-    total_testados,
-    total_positivos
-FROM gold_evolucao_nacional
-ORDER BY mes
-LIMIT 20
-"@
+        Query = "SELECT mes, total_entrevistados, total_com_sintomas, pct_sintomaticos, total_testados, total_positivos FROM gold_evolucao_nacional ORDER BY mes LIMIT 20"
     },
     @{
         Name = "Top 10 UFs com mais sintomáticos"
-        Query = @"
-SELECT 
-    uf_nome,
-    regiao,
-    SUM(total_com_sintomas_covid) as total_sintomaticos,
-    ROUND(AVG(pct_sintomas_covid), 2) as media_pct_sintomas
-FROM gold_sintomas_uf_mes
-GROUP BY uf_nome, regiao
-ORDER BY total_sintomaticos DESC
-LIMIT 10
-"@
+        Query = "SELECT uf_nome, regiao, SUM(total_com_sintomas_covid) as total_sintomaticos, ROUND(AVG(pct_sintomas_covid), 2) as media_pct_sintomas FROM gold_sintomas_uf_mes GROUP BY uf_nome, regiao ORDER BY total_sintomaticos DESC LIMIT 10"
     }
 )
+
+Write-Info "Using Python: $CONDA_PYTHON"
 
 foreach ($q in $queries) {
     Write-Info "Running query: $($q.Name)"
     Write-Host "-" * 60
     
     try {
-        python $queryScript $q.Query 2>&1 | Show-LimitedOutput -Lines 25
+        & $CONDA_PYTHON $queryScript $q.Query 2>&1 | Show-LimitedOutput -Lines 25
     } catch {
         Write-Error "Query failed: $_"
     }

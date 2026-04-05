@@ -20,7 +20,8 @@ if ($existingCsvs -and $existingCsvs.Count -gt 0) {
     
     $extractScript = Join-Path $SRC_DIR "data\extract_microdados.py"
     if (Test-Path $extractScript) {
-        python $extractScript
+        Write-Info "Using Python: $CONDA_PYTHON"
+        & $CONDA_PYTHON $extractScript
         if ($LASTEXITCODE -eq 0) {
             Write-Success "Data extraction complete"
             Get-ChildItem -Path $bronzeDir -Recurse -Filter "*.csv" | Select-Object Name, Length | Format-Table

@@ -2,6 +2,18 @@
 Glue Job: Silver to Gold
 Cria agregações analíticas para o Tech Challenge.
 Uses Spark SQL for reliable column handling.
+
+IMPORTANTE - Métricas Calculadas:
+Este job produz 6 tabelas Gold com métricas para responder às perguntas do Tech Challenge:
+1. sintomas_uf_mes: Distribuição geográfica de sintomas
+2. trabalho_regiao_mes: Impacto econômico por região
+3. perfil_sintomaticos: Características demográficas
+4. testes_uf: Taxa de testagem e positividade
+5. evolucao_nacional: Série temporal consolidada
+6. acesso_saude: Análise socioeconômica
+
+As colunas utilizadas são as colunas essenciais definidas em bronze_to_silver.py,
+garantindo consistência mesmo com variação de schema entre meses.
 """
 import sys
 from awsglue.utils import getResolvedOptions

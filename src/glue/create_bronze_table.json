@@ -150,7 +150,7 @@
                 {"Name": "V1031", "Type": "string"},
                 {"Name": "V1032", "Type": "string"}
             ],
-            "Location": "s3:///bronze/",
+            "Location": "s3://BUCKET_NAME/bronze/",
             "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
             "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
             "SerdeInfo": {
