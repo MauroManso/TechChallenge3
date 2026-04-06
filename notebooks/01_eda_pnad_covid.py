@@ -33,27 +33,35 @@ pd.set_option('display.max_columns', None)
 
 # %% [markdown]
 # ## 1. Carregamento dos Dados Gold
+# 
+# **IMPORTANTE:** Filtramos apenas os meses 9, 10 e 11 (Set-Nov/2020) conforme requisito
+# do Tech Challenge de utilizar 3 meses de dados.
 
 # %%
 # Configurações AWS
 database = "pnad_covid_db"
 
-# Carregar tabelas Gold via Athena
+# Meses permitidos conforme requisito (3 meses: Setembro, Outubro, Novembro)
+MESES_ANALISE = [9, 10, 11]
+
+# Carregar tabelas Gold via Athena - FILTRANDO apenas os 3 meses requeridos
 df_evolucao = wr.athena.read_sql_query(
-    "SELECT * FROM gold_evolucao_nacional ORDER BY mes",
+    f"SELECT * FROM gold_evolucao_nacional WHERE mes IN ({','.join(map(str, MESES_ANALISE))}) ORDER BY mes",
     database=database
 )
 
 df_sintomas_uf = wr.athena.read_sql_query(
-    "SELECT * FROM gold_sintomas_uf_mes",
+    f"SELECT * FROM gold_sintomas_uf_mes WHERE mes IN ({','.join(map(str, MESES_ANALISE))})",
     database=database
 )
 
 df_trabalho = wr.athena.read_sql_query(
-    "SELECT * FROM gold_trabalho_regiao_mes",
+    f"SELECT * FROM gold_trabalho_regiao_mes WHERE mes IN ({','.join(map(str, MESES_ANALISE))})",
     database=database
 )
 
+# Tabelas sem coluna mes - agregam todos os dados disponíveis
+# Estas são recalculadas pelo ETL que já filtra os meses corretos
 df_testes = wr.athena.read_sql_query(
     "SELECT * FROM gold_testes_uf",
     database=database
@@ -72,27 +80,42 @@ print(f"  - Trabalho por Região: {df_trabalho.shape}")
 print(f"  - Testes por UF: {df_testes.shape}")
 print(f"  - Perfil Sintomáticos: {df_perfil.shape}")
 
+# Verificar que estamos usando apenas os 3 meses corretos
+print(f"\n✓ Meses na análise: {sorted(df_evolucao['mes'].unique())}")
+assert set(df_evolucao['mes'].unique()) == set(MESES_ANALISE), \
+    f"ERRO: Esperado meses {MESES_ANALISE}, encontrado {sorted(df_evolucao['mes'].unique())}"
+print(f"✓ Conformidade com requisito de 3 meses: OK")
+
 # %% [markdown]
 # ## 2. Evolução Temporal
+# 
+# Análise da evolução dos indicadores COVID ao longo dos 3 meses de referência.
 
 # %%
 fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+fig.suptitle('Evolução Temporal COVID-19 (Set-Nov/2020)', fontsize=14, fontweight='bold')
+
+# Mapeamento de meses para nomes
+mes_nome = {9: 'Set', 10: 'Out', 11: 'Nov'}
+meses_labels = [mes_nome.get(m, str(m)) for m in df_evolucao['mes']]
 
 # Sintomáticos ao longo do tempo
 ax1 = axes[0, 0]
 ax1.plot(df_evolucao['mes'], df_evolucao['pct_sintomaticos'], marker='o', linewidth=2)
 ax1.set_xlabel('Mês')
 ax1.set_ylabel('% Sintomáticos')
-ax1.set_title('Evolução do % de Entrevistados com Sintomas COVID')
+ax1.set_title('% de Entrevistados com Sintomas COVID')
 ax1.set_xticks(df_evolucao['mes'])
+ax1.set_xticklabels(meses_labels)
 
 # Testados ao longo do tempo
 ax2 = axes[0, 1]
 ax2.plot(df_evolucao['mes'], df_evolucao['pct_testados'], marker='s', linewidth=2, color='green')
 ax2.set_xlabel('Mês')
 ax2.set_ylabel('% Testados')
-ax2.set_title('Evolução do % de Testados para COVID')
+ax2.set_title('% de Testados para COVID')
 ax2.set_xticks(df_evolucao['mes'])
+ax2.set_xticklabels(meses_labels)
 
 # Total de positivos
 ax3 = axes[1, 0]
@@ -101,6 +124,7 @@ ax3.set_xlabel('Mês')
 ax3.set_ylabel('Total Positivos')
 ax3.set_title('Total de Testes Positivos por Mês')
 ax3.set_xticks(df_evolucao['mes'])
+ax3.set_xticklabels(meses_labels)
 
 # Internados
 ax4 = axes[1, 1]
@@ -109,6 +133,7 @@ ax4.set_xlabel('Mês')
 ax4.set_ylabel('Total Internados')
 ax4.set_title('Total de Internações por Mês')
 ax4.set_xticks(df_evolucao['mes'])
+ax4.set_xticklabels(meses_labels)
 
 plt.tight_layout()
 plt.savefig('../reports/01_evolucao_temporal.png', dpi=150, bbox_inches='tight')
@@ -154,9 +179,12 @@ plt.show()
 
 # %% [markdown]
 # ## 4. Impacto no Trabalho
+# 
+# Análise do impacto da pandemia no afastamento do trabalho por região.
 
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+fig.suptitle('Impacto COVID-19 no Trabalho (Set-Nov/2020)', fontsize=12, fontweight='bold')
 
 # Afastamentos por região
 trabalho_regiao_total = df_trabalho.groupby('regiao').agg({
@@ -180,7 +208,9 @@ for regiao in df_trabalho['regiao'].unique():
     ax2.plot(dados_regiao['mes'], dados_regiao['pct_afastados'], marker='o', label=regiao)
 ax2.set_xlabel('Mês')
 ax2.set_ylabel('% Afastados')
-ax2.set_title('Evolução do Afastamento do Trabalho por Região')
+ax2.set_title('Evolução do Afastamento por Região')
+ax2.set_xticks(MESES_ANALISE)
+ax2.set_xticklabels(['Set', 'Out', 'Nov'])
 ax2.legend()
 
 plt.tight_layout()
