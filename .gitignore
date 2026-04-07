@@ -43,6 +43,7 @@ temp/
 reports/**/*.html
 reports/**/*.png
 reports/**/*.jpg
+reports/**/*.pdf
 
 # Ignore all actual data files but keep folder structure
 # Keep placeholder files and docs needed to explain data download.
@@ -51,3 +52,6 @@ data/**
 !data/**/
 !data/**/.gitkeep
 !data/README.md
+
+# Enviroment Files
+*.env
