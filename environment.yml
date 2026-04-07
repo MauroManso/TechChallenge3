@@ -34,4 +34,5 @@ dependencies:
   - pyspark
   - pip:
     - boto3
+    - botocore[crt]
     - awswrangler

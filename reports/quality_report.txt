@@ -9,7 +9,7 @@ Reprovadas: 0
 ✓ dir_reports: Diretório reports: OK
 ✓ dir_notebooks: Diretório notebooks: OK
 ✓ report_relatorio_final_md: Relatório relatorio_final.md: OK
-✓ report_pngs: Gráficos EDA: 0/5 encontrados (execute EDA para gerar)
+✓ report_pngs: Gráficos EDA: 5/5 encontrados (execute EDA para gerar)
 ✓ glue_bronze_to_silver_py: Script Glue bronze_to_silver.py: OK
 ✓ glue_silver_to_gold_py: Script Glue silver_to_gold.py: OK
 ✓ glue_create_bronze_table_json: Script Glue create_bronze_table.json: OK
