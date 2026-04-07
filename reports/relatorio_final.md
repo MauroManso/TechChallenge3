@@ -2,8 +2,8 @@
 
 ## Análise de Dados PNAD COVID-19 para Preparação Hospitalar
 
-**Grupo:** FIAP PosTech Data Analytics  
-**Data:** Abril 2026  
+**Author:** Mauro Lucas da Silva Manso
+**Data:** 06 Abril 2026  
 **Período de análise:** Setembro a Novembro de 2020  
 
 ---
@@ -59,7 +59,7 @@ O pipeline foi implementado na AWS utilizando arquitetura de camadas Bronze/Silv
 - **Processamento ETL:** AWS Glue Jobs (PySpark)
 - **Consultas SQL:** Amazon Athena
 - **Análise exploratória:** Python (Pandas, Matplotlib, Seaborn)
-- **Ambiente:** Conda (techchallenge3)
+- **Ambiente:** Conda
 
 ---
 
@@ -200,61 +200,3 @@ A análise dos dados PNAD COVID-19 do período set-nov/2020 revela padrões impo
 2. **Desigualdade regional é marcante** - Norte e Nordeste requerem atenção especial
 3. **Grupos vulneráveis identificados** - Idosos, população sem plano de saúde e trabalhadores informais
 4. **Infraestrutura testada** - Pipeline Bronze/Silver/Gold permite análises futuras
-
-**Próximos passos sugeridos:**
-
-- Atualizar análise com dados mais recentes quando disponíveis
-- Integrar dados hospitalares próprios para calibrar estimativas
-- Estabelecer dashboard de monitoramento em tempo real
-
----
-
-## Anexos
-
-### A. Arquivos de Saída
-
-| Arquivo                     | Descrição                       |
-| --------------------------- | ------------------------------- |
-| `01_evolucao_temporal.png`  | Gráficos de série temporal      |
-| `02_sintomas_por_uf.png`    | Mapa de calor por UF            |
-| `03_impacto_trabalho.png`   | Análise de afastamentos         |
-| `04_perfil_demografico.png` | Distribuição demográfica        |
-| `05_taxa_positividade.png`  | Taxa de positividade por UF     |
-| `quality_report.txt`        | Relatório de validação de dados |
-
-### B. Código-fonte
-
-| Módulo            | Localização                      | Propósito                   |
-| ----------------- | -------------------------------- | --------------------------- |
-| Extração          | `src/data/extract_microdados.py` | Extrair ZIPs dos microdados |
-| ETL Bronze→Silver | `src/glue/bronze_to_silver.py`   | Limpeza e tipagem           |
-| ETL Silver→Gold   | `src/glue/silver_to_gold.py`     | Agregações analíticas       |
-| Validação         | `src/data/quality_checks.py`     | Checagens de qualidade      |
-| EDA               | `notebooks/01_eda_pnad_covid.py` | Análise exploratória        |
-
-### C. Queries SQL Principais
-
-```sql
--- Evolução temporal
-SELECT mes, total_entrevistados, total_com_sintomas, 
-       pct_sintomaticos, total_testados, total_positivos
-FROM gold_evolucao_nacional 
-ORDER BY mes;
-
--- Sintomas por UF
-SELECT uf_nome, regiao, SUM(total_com_sintomas_covid) as total,
-       ROUND(AVG(pct_sintomas_covid), 2) as media_pct
-FROM gold_sintomas_uf_mes 
-GROUP BY uf_nome, regiao;
-
--- Perfil demográfico
-SELECT sexo_desc, cor_raca_desc, SUM(total_sintomaticos) as total,
-       ROUND(AVG(idade_media), 1) as idade_media
-FROM gold_perfil_sintomaticos 
-GROUP BY sexo_desc, cor_raca_desc;
-```
-
----
-
-**Documento gerado automaticamente pelo pipeline Tech Challenge 3**
-Mauro Manso
